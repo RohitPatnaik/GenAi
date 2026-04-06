@@ -1,0 +1,10 @@
+﻿[
+  {
+    "cve": "CVE-2024-38474",
+    "cwe": "CWE-116",
+    "title": "Apache HTTP Server RewriteRule substitution injection",
+    "description": "A vulnerability in Apache HTTP Server allows substitution injection in RewriteRule when encoded URLs are processed.",
+    "cvss_score": 8.2,
+    "severity": "high"
+  }
+]

@@ -1,0 +1,9 @@
+psycopg2-binary
+python-dotenv
+openai
+requests
+tqdm
+fastapi
+uvicorn
+python-multipart
+requests-toolbelt

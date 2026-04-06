@@ -1,0 +1,186 @@
+[
+    {
+        "cve": "CVE-2021-44228",
+        "cwe": "CWE-917",
+        "title": "Apache Log4j2 Remote Code Execution (Log4Shell)",
+        "description": "A critical vulnerability in Apache Log4j2 allows unauthenticated remote code execution via JNDI lookups. Affected versions: 2.0-beta9 to 2.14.1."
+    },
+    {
+        "cve": "CVE-2024-38474",
+        "cwe": "",
+        "title": "Apache HTTP Server RewriteRule substitution injection",
+        "description": "A vulnerability in Apache HTTP Server allows substitution injection in RewriteRule."
+    },
+    {
+        "cve": "CVE-2018-14057",
+        "cwe": "CWE-79",
+        "title": "Pimcore Cross-Site Scripting (XSS)",
+        "description": "Pimcore before 5.3.0 allows XSS via the admin/misc/scriptlet extension parameter."
+    },
+    {
+        "cve": "CVE-2023-1410",
+        "cwe": "CWE-79",
+        "title": "Grafana XSS via Playlist",
+        "description": "Grafana allows XSS via the playlist feature, affecting versions 8.0.0 to 9.2.10."
+    },
+    {
+        "cve": "CVE-2099-0001",
+        "cwe": "CWE-200",
+        "title": "Test Low CVSS Entry",
+        "description": "This is a test entry with low CVSS score; it should be filtered out.",
+        "cvss_score": 3.2,
+        "severity": "low"
+    },
+    {
+        "cve": "CVE-2099-0002",
+        "cwe": "CWE-79",
+        "title": "Test Low CVSS Entry 2",
+        "description": "Synthetic low-severity test case for filtering.",
+        "cvss_score": 2.9,
+        "severity": "low"
+    },
+    {
+        "cve": "CVE-2099-0003",
+        "cwe": "CWE-22",
+        "title": "Test Low CVSS Entry 3",
+        "description": "Synthetic low-severity test case for filtering.",
+        "cvss_score": 1.8,
+        "severity": "low"
+    },
+    {
+        "cve": "CVE-2099-0004",
+        "cwe": "CWE-200",
+        "title": "Test Low CVSS Entry 4",
+        "description": "Synthetic low-severity test case for filtering.",
+        "cvss_score": 3.5,
+        "severity": "low"
+    },
+    {
+        "cve": "CVE-2099-0005",
+        "cwe": "CWE-352",
+        "title": "Test Low CVSS Entry 5",
+        "description": "Synthetic low-severity test case for filtering.",
+        "cvss_score": 0.9,
+        "severity": "low"
+    },
+    {
+        "cve": "CVE-2099-0006",
+        "cwe": "CWE-255",
+        "title": "Test Low CVSS Entry 6",
+        "description": "Synthetic low-severity test case for filtering.",
+        "cvss_score": 3.7,
+        "severity": "low"
+    },
+    {
+        "cve": "CVE-2099-0007",
+        "cwe": "CWE-285",
+        "title": "Test Low CVSS Entry 7",
+        "description": "Synthetic low-severity test case for filtering.",
+        "cvss_score": 2.1,
+        "severity": "low"
+    },
+    {
+        "cve": "CVE-2099-0008",
+        "cwe": "CWE-118",
+        "title": "Test Low CVSS Entry 8",
+        "description": "Synthetic low-severity test case for filtering.",
+        "cvss_score": 3.0,
+        "severity": "low"
+    },
+    {
+        "cve": "CVE-2099-0009",
+        "cwe": "CWE-269",
+        "title": "Test Low CVSS Entry 9",
+        "description": "Synthetic low-severity test case for filtering.",
+        "cvss_score": 1.2,
+        "severity": "low"
+    },
+    {
+        "cve": "CVE-2099-0010",
+        "cwe": "CWE-400",
+        "title": "Test Low CVSS Entry 10",
+        "description": "Synthetic low-severity test case for filtering.",
+        "cvss_score": 2.7,
+        "severity": "low"
+    },
+    {
+        "cve": "CVE-2099-0101",
+        "cwe": "CWE-79",
+        "title": "Test Medium CVSS Entry 1",
+        "description": "Synthetic medium-severity test case to remain after filtering.",
+        "cvss_score": 4.0,
+        "severity": "medium"
+    },
+    {
+        "cve": "CVE-2099-0102",
+        "cwe": "CWE-89",
+        "title": "Test Medium CVSS Entry 2",
+        "description": "Synthetic medium-severity test case to remain after filtering.",
+        "cvss_score": 5.3,
+        "severity": "medium"
+    },
+    {
+        "cve": "CVE-2099-0103",
+        "cwe": "CWE-352",
+        "title": "Test Medium CVSS Entry 3",
+        "description": "Synthetic medium-severity test case to remain after filtering.",
+        "cvss_score": 4.7,
+        "severity": "medium"
+    },
+    {
+        "cve": "CVE-2099-0104",
+        "cwe": "CWE-22",
+        "title": "Test Medium CVSS Entry 4",
+        "description": "Synthetic medium-severity test case to remain after filtering.",
+        "cvss_score": 6.1,
+        "severity": "medium"
+    },
+    {
+        "cve": "CVE-2099-0105",
+        "cwe": "CWE-125",
+        "title": "Test High CVSS Entry 5",
+        "description": "Synthetic high-severity test case to remain after filtering.",
+        "cvss_score": 7.2,
+        "severity": "high"
+    },
+    {
+        "cve": "CVE-2099-0106",
+        "cwe": "CWE-200",
+        "title": "Test High CVSS Entry 6",
+        "description": "Synthetic high-severity test case to remain after filtering.",
+        "cvss_score": 7.8,
+        "severity": "high"
+    },
+    {
+        "cve": "CVE-2099-0107",
+        "cwe": "CWE-787",
+        "title": "Test High CVSS Entry 7",
+        "description": "Synthetic high-severity test case to remain after filtering.",
+        "cvss_score": 8.1,
+        "severity": "high"
+    },
+    {
+        "cve": "CVE-2099-0108",
+        "cwe": "CWE-119",
+        "title": "Test Critical CVSS Entry 8",
+        "description": "Synthetic critical-severity test case to remain after filtering.",
+        "cvss_score": 9.0,
+        "severity": "critical"
+    },
+    {
+        "cve": "CVE-2099-0109",
+        "cwe": "CWE-269",
+        "title": "Test Critical CVSS Entry 9",
+        "description": "Synthetic critical-severity test case to remain after filtering.",
+        "cvss_score": 9.6,
+        "severity": "critical"
+    },
+    {
+        "cve": "CVE-2099-0110",
+        "cwe": "CWE-416",
+        "title": "Test Critical CVSS Entry 10",
+        "description": "Synthetic critical-severity test case to remain after filtering.",
+        "cvss_score": 8.8,
+        "severity": "critical"
+    }
+]
