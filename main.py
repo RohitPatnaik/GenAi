@@ -31,7 +31,8 @@ from db.models import update_has_script
 from scanner_parser.parser import load_normalized_input
 from matcher.matcher import match_vulnerabilities
 from executor.runner import run_exploit, ensure_docker_running
-from db.models import add_scan_event, update_scan_job, get_scan_job, add_scan_report
+from db.models import add_scan_event, update_scan_job, get_scan_job, add_scan_report, get_scan_report, add_validator_result
+from validator.validator import validate_report
 from openai_generator.generator import (
     build_initial_prompt,
     save_prompt,
@@ -56,6 +57,18 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
+
+def _extract_json_from_text(text: str) -> Dict[str, Any] | None:
+    if not text:
+        return None
+    start = text.find("{")
+    end = text.rfind("}")
+    if start == -1 or end == -1 or end <= start:
+        return None
+    try:
+        return json.loads(text[start:end + 1])
+    except Exception:
+        return None
 
 def process_vulnerability(vuln: Dict[str, Any], target_url: str, job_id: str = None) -> Dict[str, Any]:
     """
@@ -264,13 +277,49 @@ def main():
         'details': results
     }
 
+    report_id = None
     if job_id:
-        update_scan_job(job_id, status="finished", stage="report")
+        update_scan_job(job_id, stage="report")
         add_scan_event(job_id, "report", "info", "Summary report saved to database")
         try:
-            add_scan_report(job_id, summary)
+            report_id = add_scan_report(job_id, summary)
         except Exception:
-            pass
+            report_id = None
+
+    # Step 6: Validator stage (runs on report saved in DB)
+    if job_id:
+        update_scan_job(job_id, stage="validator")
+        add_scan_event(job_id, "validator", "info", "Validator started")
+        try:
+            report_json = None
+            if report_id:
+                report_row = get_scan_report(report_id)
+                if report_row:
+                    report_json = report_row.get("summary_json")
+
+            # If summary report doesn't include vulnerabilities, try to parse a CVE report from stdout
+            if not report_json or not report_json.get("vulnerabilities"):
+                for r in results:
+                    attempts = r.get("attempts") or []
+                    last = attempts[-1] if attempts else {}
+                    test = last.get("test_result") or last.get("result") or {}
+                    stdout = test.get("stdout") or ""
+                    parsed = _extract_json_from_text(stdout)
+                    if parsed and parsed.get("vulnerabilities"):
+                        report_json = parsed
+                        break
+
+            if not report_json:
+                report_json = summary
+
+            validation = validate_report(report_json)
+            add_validator_result(job_id, report_id, validation)
+            add_scan_event(job_id, "validator", "info", f"Validator finished: {validation.get('overall_status')}")
+        except Exception as e:
+            add_scan_event(job_id, "validator", "error", str(e))
+
+    if job_id:
+        update_scan_job(job_id, status="finished", stage="validator")
 
     # Also print summary to console
     print("\n" + "=" * 60)

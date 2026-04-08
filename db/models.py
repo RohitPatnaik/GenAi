@@ -170,7 +170,7 @@ def add_scan_result(job_id, result):
     conn.close()
 
 
-def get_scan_results(job_id=None, limit=200, lite=False):
+def get_scan_results(job_id=None, limit=200, offset=0, lite=False):
     conn = get_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     select_cols = (
@@ -180,13 +180,13 @@ def get_scan_results(job_id=None, limit=200, lite=False):
     )
     if job_id:
         cur.execute(
-            f"SELECT {select_cols} FROM scan_results WHERE job_id = %s ORDER BY id DESC LIMIT %s",
-            (job_id, limit),
+            f"SELECT {select_cols} FROM scan_results WHERE job_id = %s ORDER BY id DESC LIMIT %s OFFSET %s",
+            (job_id, limit, offset),
         )
     else:
         cur.execute(
-            f"SELECT {select_cols} FROM scan_results ORDER BY id DESC LIMIT %s",
-            (limit,),
+            f"SELECT {select_cols} FROM scan_results ORDER BY id DESC LIMIT %s OFFSET %s",
+            (limit, offset),
         )
     rows = cur.fetchall()
     cur.close()
@@ -204,6 +204,19 @@ def get_scan_result(result_id):
     return row
 
 
+def count_scan_results(job_id=None):
+    conn = get_connection()
+    cur = conn.cursor()
+    if job_id:
+        cur.execute("SELECT COUNT(*) FROM scan_results WHERE job_id = %s", (job_id,))
+    else:
+        cur.execute("SELECT COUNT(*) FROM scan_results")
+    count = cur.fetchone()[0]
+    cur.close()
+    conn.close()
+    return count
+
+
 def add_scan_report(job_id, summary_json):
     conn = get_connection()
     cur = conn.cursor()
@@ -211,24 +224,27 @@ def add_scan_report(job_id, summary_json):
         "INSERT INTO scan_reports (job_id, summary_json) VALUES (%s,%s)",
         (job_id, json.dumps(summary_json)),
     )
+    cur.execute("SELECT currval(pg_get_serial_sequence('scan_reports','id'))")
+    report_id = cur.fetchone()[0]
     conn.commit()
     cur.close()
     conn.close()
+    return report_id
 
 
-def get_scan_reports(limit=50, job_id=None, lite=False):
+def get_scan_reports(limit=50, offset=0, job_id=None, lite=False):
     conn = get_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     select_cols = "id, job_id, created_at" if lite else "*"
     if job_id:
         cur.execute(
-            f"SELECT {select_cols} FROM scan_reports WHERE job_id = %s ORDER BY id DESC LIMIT %s",
-            (job_id, limit),
+            f"SELECT {select_cols} FROM scan_reports WHERE job_id = %s ORDER BY id DESC LIMIT %s OFFSET %s",
+            (job_id, limit, offset),
         )
     else:
         cur.execute(
-            f"SELECT {select_cols} FROM scan_reports ORDER BY id DESC LIMIT %s",
-            (limit,),
+            f"SELECT {select_cols} FROM scan_reports ORDER BY id DESC LIMIT %s OFFSET %s",
+            (limit, offset),
         )
     rows = cur.fetchall()
     cur.close()
@@ -244,3 +260,83 @@ def get_scan_report(report_id):
     cur.close()
     conn.close()
     return row
+
+
+def count_scan_reports(job_id=None):
+    conn = get_connection()
+    cur = conn.cursor()
+    if job_id:
+        cur.execute("SELECT COUNT(*) FROM scan_reports WHERE job_id = %s", (job_id,))
+    else:
+        cur.execute("SELECT COUNT(*) FROM scan_reports")
+    count = cur.fetchone()[0]
+    cur.close()
+    conn.close()
+    return count
+
+# ---- Validator results ----
+
+def add_validator_result(job_id, report_id, validation_json):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO validator_results
+        (job_id, report_id, overall_status, summary_json, details_json, recommendations)
+        VALUES (%s,%s,%s,%s,%s,%s)
+        """,
+        (
+            job_id,
+            report_id,
+            validation_json.get("overall_status"),
+            json.dumps(validation_json.get("validation_summary")),
+            json.dumps(validation_json.get("validation_details")),
+            json.dumps(validation_json.get("recommendations")),
+        )
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
+def get_validator_results(limit=50, offset=0, job_id=None, lite=False):
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    select_cols = "id, job_id, report_id, overall_status, created_at" if lite else "*"
+    if job_id:
+        cur.execute(
+            f"SELECT {select_cols} FROM validator_results WHERE job_id = %s ORDER BY id DESC LIMIT %s OFFSET %s",
+            (job_id, limit, offset),
+        )
+    else:
+        cur.execute(
+            f"SELECT {select_cols} FROM validator_results ORDER BY id DESC LIMIT %s OFFSET %s",
+            (limit, offset),
+        )
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return rows
+
+
+def get_validator_result(result_id):
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute("SELECT * FROM validator_results WHERE id = %s", (result_id,))
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    return row
+
+
+def count_validator_results(job_id=None):
+    conn = get_connection()
+    cur = conn.cursor()
+    if job_id:
+        cur.execute("SELECT COUNT(*) FROM validator_results WHERE job_id = %s", (job_id,))
+    else:
+        cur.execute("SELECT COUNT(*) FROM validator_results")
+    count = cur.fetchone()[0]
+    cur.close()
+    conn.close()
+    return count

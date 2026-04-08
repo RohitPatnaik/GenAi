@@ -1,19 +1,10 @@
 [
-    {
+  {
     "cve": "CVE-2022-0543",
     "cwe": "CWE-269",
     "title": "Redis Lua Sandbox Escape Vulnerability",
     "description": "A vulnerability in Redis versions prior to 7.0.0 allows an attacker with Lua scripting permissions to escape the sandbox and execute arbitrary system commands or access the host environment due to improper input validation and privilege management.",
     "cvss_score": 9.6,
     "severity": "critical"
-},
-
-    {
-        "cve": "CVE-2099-0110",
-        "cwe": "CWE-416",
-        "title": "Test Critical CVSS Entry 10",
-        "description": "Synthetic critical-severity test case to remain after filtering.",
-        "cvss_score": 1.8,
-        "severity": "critical"
-    }
+  }
 ]

@@ -100,6 +100,22 @@ def init_db():
         """
         CREATE INDEX IF NOT EXISTS idx_scan_reports_job_id
         ON scan_reports (job_id)
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS validator_results (
+            id SERIAL PRIMARY KEY,
+            job_id UUID REFERENCES scan_jobs(id) ON DELETE CASCADE,
+            report_id INT REFERENCES scan_reports(id) ON DELETE CASCADE,
+            overall_status TEXT,
+            summary_json JSONB,
+            details_json JSONB,
+            recommendations JSONB,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS idx_validator_results_job_id
+        ON validator_results (job_id)
         """
     )
     conn = None
@@ -129,6 +145,8 @@ def ensure_schema():
         "CREATE INDEX IF NOT EXISTS idx_scan_results_job_id ON scan_results (job_id)",
         "CREATE TABLE IF NOT EXISTS scan_reports (id SERIAL PRIMARY KEY, job_id UUID REFERENCES scan_jobs(id) ON DELETE CASCADE, summary_json JSONB, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
         "CREATE INDEX IF NOT EXISTS idx_scan_reports_job_id ON scan_reports (job_id)",
+        "CREATE TABLE IF NOT EXISTS validator_results (id SERIAL PRIMARY KEY, job_id UUID REFERENCES scan_jobs(id) ON DELETE CASCADE, report_id INT REFERENCES scan_reports(id) ON DELETE CASCADE, overall_status TEXT, summary_json JSONB, details_json JSONB, recommendations JSONB, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
+        "CREATE INDEX IF NOT EXISTS idx_validator_results_job_id ON validator_results (job_id)",
     )
     conn = None
     try:
