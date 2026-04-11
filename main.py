@@ -32,7 +32,7 @@ from db.models import update_has_script
 from scanner_parser.parser import parse_raw_input, write_normalized
 from matcher.matcher import match_vulnerabilities
 from executor.runner import run_exploit, ensure_docker_running
-from db.models import create_scan_job, add_scan_event, update_scan_job, get_scan_job, add_scan_report, get_scan_report, add_validator_result
+from db.models import create_scan_job, add_scan_report, get_scan_report, add_validator_result
 from db.connection import init_db, ensure_schema
 from sync_kb import sync_knowledgebase
 from validator.validator import validate_report
@@ -44,22 +44,18 @@ from openai_generator.generator import (
 )
 from openai_generator.log_analyzer import analyze_failure
 from utils.file_utils import get_cve_script_path, ensure_cve_dir
+from utils.scanner_logging import (
+    setup_scanner_logger,
+    log_scan_event as _log_scan_event,
+    log_stage_update as _log_stage_update,
+)
 
 # Ensure required directories exist
 os.makedirs(KNOWLEDGEBASE_DIR, exist_ok=True)
 os.makedirs(REPORTS_DIR, exist_ok=True)
 os.makedirs(LOGS_DIR, exist_ok=True)
 
-# Set up logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler(os.path.join(LOGS_DIR, 'orchestrator.log')),
-        logging.StreamHandler()
-    ]
-)
-logger = logging.getLogger(__name__)
+logger = setup_scanner_logger(__name__, "orchestrator.log", add_stream=True)
 
 def _extract_json_from_text(text: str) -> Dict[str, Any] | None:
     if not text:
@@ -95,7 +91,7 @@ def process_vulnerability(vuln: Dict[str, Any], target_url: str, job_id: str = N
     if action == 'run':
         # Execute existing script (sandboxed)
         if job_id:
-            update_scan_job(job_id, stage="sandbox")
+            _log_stage_update(logger, job_id, "sandbox", cve=cve, action=action)
         exec_result = run_exploit(cve, target_url, job_id=job_id, stage="sandbox")
         result['success'] = exec_result.get('success', False)
         result['final_script_path'] = exec_result.get('script_path')
@@ -116,19 +112,36 @@ def process_vulnerability(vuln: Dict[str, Any], target_url: str, job_id: str = N
         description = vuln.get('description', 'No description')
         current_prompt = build_initial_prompt(cve, title, description)
         if job_id:
-            update_scan_job(job_id, stage="generate")
-            add_scan_event(job_id, "generate", "info", f"{cve} generation started")
+            _log_stage_update(logger, job_id, "generate", cve=cve, action=action)
+            _log_scan_event(logger, "info", f"{cve} generation started", job_id=job_id, stage="generate")
 
         for attempt in range(1, MAX_OPENAI_ATTEMPTS + 1):
             logger.info(f"Generation attempt {attempt}/{MAX_OPENAI_ATTEMPTS} for {cve}")
             if job_id:
-                add_scan_event(job_id, "generate", "info", f"{cve} generation attempt {attempt}")
+                _log_scan_event(
+                    logger,
+                    "info",
+                    f"{cve} generation attempt {attempt}",
+                    job_id=job_id,
+                    stage="generate",
+                    cve=cve,
+                    attempt=attempt,
+                    max_attempts=MAX_OPENAI_ATTEMPTS,
+                )
             save_prompt(cve, attempt, current_prompt)
 
             script_content = generate_script_with_openai(current_prompt)
             if not script_content:
                 if job_id:
-                    add_scan_event(job_id, "generate", "error", f"{cve} generation failed")
+                    _log_scan_event(
+                        logger,
+                        "error",
+                        f"{cve} generation failed",
+                        job_id=job_id,
+                        stage="generate",
+                        cve=cve,
+                        attempt=attempt,
+                    )
                 result['attempts'].append({
                     'attempt': attempt,
                     'type': 'generate',
@@ -147,8 +160,16 @@ def process_vulnerability(vuln: Dict[str, Any], target_url: str, job_id: str = N
 
             # Test the generated script (sandboxed)
             if job_id:
-                update_scan_job(job_id, stage="sandbox")
-                add_scan_event(job_id, "sandbox", "info", f"{cve} sandbox validation started")
+                _log_stage_update(logger, job_id, "sandbox", cve=cve, action=action, attempt=attempt)
+                _log_scan_event(
+                    logger,
+                    "info",
+                    f"{cve} sandbox validation started",
+                    job_id=job_id,
+                    stage="sandbox",
+                    cve=cve,
+                    attempt=attempt,
+                )
             test_result = run_exploit(cve, target_url, job_id=job_id, stage="sandbox")
             result['attempts'][-1]['test_result'] = test_result
 
@@ -158,7 +179,16 @@ def process_vulnerability(vuln: Dict[str, Any], target_url: str, job_id: str = N
                 result['final_script_path'] = script_path
                 update_has_script(cve, 1)
                 if job_id:
-                    add_scan_event(job_id, "generate", "info", f"{cve} succeeded on attempt {attempt}")
+                    _log_scan_event(
+                        logger,
+                        "info",
+                        f"{cve} succeeded on attempt {attempt}",
+                        job_id=job_id,
+                        stage="generate",
+                        cve=cve,
+                        attempt=attempt,
+                        script_path=script_path,
+                    )
                 break
 
             logger.warning(f"{cve} exploit failed on attempt {attempt}.")
@@ -167,7 +197,15 @@ def process_vulnerability(vuln: Dict[str, Any], target_url: str, job_id: str = N
                 error_log += f"\n{test_result['error']}"
             current_prompt = analyze_failure(cve, error_log, current_prompt)
             if job_id:
-                add_scan_event(job_id, "generate", "info", f"{cve} revised prompt for next attempt")
+                _log_scan_event(
+                    logger,
+                    "info",
+                    f"{cve} revised prompt for next attempt",
+                    job_id=job_id,
+                    stage="generate",
+                    cve=cve,
+                    attempt=attempt,
+                )
         else:
             # All attempts exhausted
             logger.error(f"All {MAX_OPENAI_ATTEMPTS} attempts failed for {cve}.")
@@ -227,8 +265,8 @@ def main():
 
     # Step 1: Parse raw input file and save normalized copy
     if job_id:
-        update_scan_job(job_id, status="running", stage="ingest")
-        add_scan_event(job_id, "ingest", "info", f"Reading raw input: {raw_file_path}")
+        _log_stage_update(logger, job_id, "ingest", status="running", input_file=raw_file_path)
+        _log_scan_event(logger, "info", f"Reading raw input: {raw_file_path}", job_id=job_id, stage="ingest")
 
     try:
         vuln_list = parse_raw_input(raw_file_path)
@@ -246,25 +284,36 @@ def main():
     logger.info(f"Normalized file saved: {normalized_file_path}")
 
     if job_id:
-        update_scan_job(job_id, stage="parse")
-        add_scan_event(job_id, "parse", "info", f"Parsed {len(vuln_list)} vulnerabilities")
+        _log_stage_update(logger, job_id, "parse", vulnerabilities_count=len(vuln_list))
+        _log_scan_event(
+            logger,
+            "info",
+            f"Parsed {len(vuln_list)} vulnerabilities",
+            job_id=job_id,
+            stage="parse",
+            vulnerabilities_count=len(vuln_list),
+            normalized_file=normalized_file_path,
+        )
 
     # Step 2: Match against database to determine actions
     if job_id:
-        update_scan_job(job_id, stage="match")
-        add_scan_event(job_id, "match", "info", "Matching CVEs against DB")
+        _log_stage_update(logger, job_id, "match")
+        _log_scan_event(logger, "info", "Matching CVEs against DB", job_id=job_id, stage="match")
 
     enriched_list = match_vulnerabilities(vuln_list)
     kb_found = sum(1 for v in enriched_list if v.get("action") == "run")
     kb_missing = sum(1 for v in enriched_list if v.get("action") == "generate")
     if job_id:
-        update_scan_job(job_id, stage="kb")
-        add_scan_event(job_id, "kb", "info", "Knowledgebase lookup complete")
-        add_scan_event(
-            job_id,
-            "kb",
+        _log_stage_update(logger, job_id, "kb", kb_found=kb_found, kb_missing=kb_missing)
+        _log_scan_event(logger, "info", "Knowledgebase lookup complete", job_id=job_id, stage="kb")
+        _log_scan_event(
+            logger,
             "info",
             f"KB scripts found: {kb_found} | to generate: {kb_missing}",
+            job_id=job_id,
+            stage="kb",
+            kb_found=kb_found,
+            kb_missing=kb_missing,
         )
 
     # Step 3: Ensure Docker is running before sandbox execution
@@ -273,15 +322,15 @@ def main():
     except Exception as e:
         logger.error(str(e))
         if job_id:
-            update_scan_job(job_id, status="failed", stage="sandbox")
-            add_scan_event(job_id, "sandbox", "error", str(e))
+            _log_stage_update(logger, job_id, "sandbox", status="failed")
+            _log_scan_event(logger, "error", str(e), job_id=job_id, stage="sandbox")
         sys.exit(1)
 
     # Step 4: Process each vulnerability
     results = []
     if job_id:
-        update_scan_job(job_id, stage="sandbox")
-        add_scan_event(job_id, "sandbox", "info", "Executing CVE scripts in sandbox")
+        _log_stage_update(logger, job_id, "sandbox")
+        _log_scan_event(logger, "info", "Executing CVE scripts in sandbox", job_id=job_id, stage="sandbox")
 
     for vuln in enriched_list:
         try:
@@ -290,8 +339,8 @@ def main():
         except Exception as e:
             logger.error(str(e))
             if job_id:
-                update_scan_job(job_id, status="failed", stage="sandbox")
-                add_scan_event(job_id, "sandbox", "error", str(e))
+                _log_stage_update(logger, job_id, "sandbox", status="failed")
+                _log_scan_event(logger, "error", str(e), job_id=job_id, stage="sandbox")
             sys.exit(1)
 
     # Sandbox results reflect the primary execution (all runs are sandboxed)
@@ -322,8 +371,8 @@ def main():
 
     report_id = None
     if job_id:
-        update_scan_job(job_id, stage="report")
-        add_scan_event(job_id, "report", "info", "Summary report saved to database")
+        _log_stage_update(logger, job_id, "report")
+        _log_scan_event(logger, "info", "Summary report saved to database", job_id=job_id, stage="report")
         try:
             report_id = add_scan_report(job_id, summary)
         except Exception:
@@ -331,8 +380,8 @@ def main():
 
     # Step 6: Validator stage (runs on report saved in DB)
     if job_id:
-        update_scan_job(job_id, stage="validator")
-        add_scan_event(job_id, "validator", "info", "Validator started")
+        _log_stage_update(logger, job_id, "validator")
+        _log_scan_event(logger, "info", "Validator started", job_id=job_id, stage="validator")
         try:
             report_json = None
             if report_id:
@@ -357,12 +406,19 @@ def main():
 
             validation = validate_report(report_json)
             add_validator_result(job_id, report_id, validation)
-            add_scan_event(job_id, "validator", "info", f"Validator finished: {validation.get('overall_status')}")
+            _log_scan_event(
+                logger,
+                "info",
+                f"Validator finished: {validation.get('overall_status')}",
+                job_id=job_id,
+                stage="validator",
+                validator_status=validation.get('overall_status'),
+            )
         except Exception as e:
-            add_scan_event(job_id, "validator", "error", str(e))
+            _log_scan_event(logger, "error", str(e), job_id=job_id, stage="validator")
 
     if job_id:
-        update_scan_job(job_id, status="finished", stage="validator")
+        _log_stage_update(logger, job_id, "validator", status="finished")
 
     # Also print summary to console
     print("\n" + "=" * 60)

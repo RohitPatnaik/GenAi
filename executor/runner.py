@@ -31,9 +31,10 @@ from config import (
     SANDBOX_TIMEOUT,
 )
 from utils.file_utils import get_cve_script_path
-from db.models import get_vulnerability_by_cve, add_scan_event, add_scan_result
+from utils.scanner_logging import setup_scanner_logger, log_scan_event as _log_scan_event
+from db.models import get_vulnerability_by_cve, add_scan_result
 
-logger = logging.getLogger(__name__)
+logger = setup_scanner_logger(__name__, "executor.log", add_stream=False)
 
 # Ensure directories exist
 os.makedirs(KNOWLEDGEBASE_DIR, exist_ok=True)
@@ -59,6 +60,8 @@ def ensure_docker_running(
                 ["docker", "info"],
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=10,
                 check=False,
             )
@@ -74,7 +77,7 @@ def ensure_docker_running(
 
     msg = "Docker not running. Start Docker Desktop to enable sandbox isolation."
     if job_id:
-        add_scan_event(job_id, stage, "error", msg)
+        _log_scan_event(logger, "error", msg, job_id=job_id, stage=stage)
     raise RuntimeError(msg)
 
 _IMPORT_PACKAGE_MAP = {
@@ -182,7 +185,16 @@ def run_exploit(
 
     logger.info(f"Running exploit for {cve} against {target_url}")
     if job_id:
-        add_scan_event(job_id, stage, "info", f"Running exploit for {cve}")
+        _log_scan_event(
+            logger,
+            "info",
+            f"Running exploit for {cve}",
+            job_id=job_id,
+            stage=stage,
+            cve=cve,
+            target_url=target_url,
+            script_path=script_path,
+        )
     try:
         if stage == "sandbox" and SANDBOX_DOCKER == "1":
             ensure_docker_running(job_id=job_id, stage=stage)
@@ -192,6 +204,8 @@ def run_exploit(
                 cmd,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=timeout,
                 check=False,  # don't raise on non-zero return
                 cwd=run_cwd
@@ -210,13 +224,33 @@ def run_exploit(
 
         logger.info(f"Exploit completed with return code {proc.returncode}")
         if job_id:
-            add_scan_event(job_id, stage, "info", f"{cve} completed (return code {proc.returncode})")
+            _log_scan_event(
+                logger,
+                "info",
+                f"{cve} completed (return code {proc.returncode})",
+                job_id=job_id,
+                stage=stage,
+                cve=cve,
+                returncode=proc.returncode,
+                success=result["success"],
+                stdout_size=len(result.get("stdout") or ""),
+                stderr_size=len(result.get("stderr") or ""),
+            )
 
     except subprocess.TimeoutExpired as e:
         result["error"] = f"Timeout expired ({timeout}s)"
         logger.error(result["error"])
         if job_id:
-            add_scan_event(job_id, stage, "error", result["error"])
+            _log_scan_event(
+                logger,
+                "error",
+                result["error"],
+                job_id=job_id,
+                stage=stage,
+                cve=cve,
+                timeout_seconds=timeout,
+                error_type=type(e).__name__,
+            )
     except Exception as e:
         # Hard-fail for Docker issues so the pipeline stops cleanly.
         msg = str(e)
@@ -225,7 +259,15 @@ def run_exploit(
         result["error"] = msg
         logger.exception(f"Unexpected error running exploit: {e}")
         if job_id:
-            add_scan_event(job_id, stage, "error", result["error"])
+            _log_scan_event(
+                logger,
+                "error",
+                result["error"],
+                job_id=job_id,
+                stage=stage,
+                cve=cve,
+                error_type=type(e).__name__,
+            )
 
     # Identify new files created by the script
     created_files = []
@@ -301,6 +343,8 @@ def _run_in_docker(
         docker_cmd,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=timeout,
         check=False,
     )
@@ -311,7 +355,7 @@ def _run_in_docker(
         if "cannot connect to the docker daemon" in low or "is the docker daemon running" in low:
             msg = "Docker not running. Start Docker Desktop to enable sandbox isolation."
             if job_id:
-                add_scan_event(job_id, stage, "error", msg)
+                _log_scan_event(logger, "error", msg, job_id=job_id, stage=stage)
             raise RuntimeError(msg)
         if ("pull access denied" in low) or ("manifest" in low and "not found" in low):
             msg = (
@@ -319,7 +363,7 @@ def _run_in_docker(
                 "Build it with: docker build -t vulnops-sandbox:latest -f sandbox/Dockerfile ."
             )
             if job_id:
-                add_scan_event(job_id, stage, "error", msg)
+                _log_scan_event(logger, "error", msg, job_id=job_id, stage=stage, docker_image=SANDBOX_DOCKER_IMAGE)
             raise RuntimeError(msg)
     return proc
 
