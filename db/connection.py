@@ -1,8 +1,34 @@
 import psycopg2
+from psycopg2 import sql
 from config import DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD, DB_CONNECT_TIMEOUT
+
+
+def ensure_database_exists():
+    """Create the configured database if it does not already exist."""
+    conn = None
+    try:
+        conn = psycopg2.connect(
+            host=DB_HOST,
+            port=DB_PORT,
+            dbname="postgres",
+            user=DB_USER,
+            password=DB_PASSWORD,
+            connect_timeout=DB_CONNECT_TIMEOUT,
+        )
+        conn.autocommit = True
+        cur = conn.cursor()
+        cur.execute("SELECT 1 FROM pg_database WHERE datname = %s", (DB_NAME,))
+        exists = cur.fetchone() is not None
+        if not exists:
+            cur.execute(sql.SQL("CREATE DATABASE {}") .format(sql.Identifier(DB_NAME)))
+        cur.close()
+    finally:
+        if conn is not None:
+            conn.close()
 
 def get_connection():
     """Return a connection to the PostgreSQL database."""
+    ensure_database_exists()
     conn = psycopg2.connect(
         host=DB_HOST,
         port=DB_PORT,

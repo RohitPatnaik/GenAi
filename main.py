@@ -12,6 +12,7 @@ import os
 import sys
 import logging
 import json
+import uuid
 from datetime import datetime
 from typing import Dict, Any, List
 
@@ -28,10 +29,12 @@ from config import (
 
 # Import components
 from db.models import update_has_script
-from scanner_parser.parser import load_normalized_input
+from scanner_parser.parser import parse_raw_input, write_normalized
 from matcher.matcher import match_vulnerabilities
 from executor.runner import run_exploit, ensure_docker_running
-from db.models import add_scan_event, update_scan_job, get_scan_job, add_scan_report, get_scan_report, add_validator_result
+from db.models import create_scan_job, add_scan_event, update_scan_job, get_scan_job, add_scan_report, get_scan_report, add_validator_result
+from db.connection import init_db, ensure_schema
+from sync_kb import sync_knowledgebase
 from validator.validator import validate_report
 from openai_generator.generator import (
     build_initial_prompt,
@@ -177,31 +180,71 @@ def process_vulnerability(vuln: Dict[str, Any], target_url: str, job_id: str = N
 
 def main():
     """Main orchestrator entry point."""
-    if len(sys.argv) < 2:
-        print("Usage: python main.py <target_url> [input_file]")
-        print("  target_url : the base URL to test against")
-        print("  input_file : optional path to normalized input JSON (default: input/norm_input_newt.json)")
-        sys.exit(1)
+    target_url = "https://pentest-ground.com:81/"
+    job_id = str(uuid.uuid4())
 
-    target_url = sys.argv[1]
-    input_file = sys.argv[2] if len(sys.argv) > 2 else 'input/norm_input_newt.json'
-    job_id = sys.argv[3] if len(sys.argv) > 3 else None
+    # Hardcoded input/output directories
+    INPUT_DIR = r'C:\aiaptt\ai_input_file'
+    NORMALIZED_DIR = r'C:\aiaptt\ai_normalized_file'
+
+    # Find the first JSON file in the input directory
+    json_files = [f for f in os.listdir(INPUT_DIR) if f.lower().endswith('.json')]
+    if not json_files:
+        logger.error(f"No JSON file found in {INPUT_DIR}. Exiting.")
+        sys.exit(1)
+    input_filename = json_files[0]
+    raw_file_path = os.path.join(INPUT_DIR, input_filename)
+    normalized_file_path = os.path.join(NORMALIZED_DIR, f"normalized_{input_filename}")
+
+    # Ensure DB schema exists before any job/event writes.
+    init_db()
+    ensure_schema()
+    sync_knowledgebase()  # Sync knowledgebase scripts to DB (set has_script=1 for existing scripts)
+
+    create_scan_job({
+        "id": job_id,
+        "job_name": f"scan_{input_filename}",
+        "priority": "normal",
+        "source_type": "file",
+        "source_path": raw_file_path,
+        "exploit_mode": "orchestrated",
+        "fallback_llm": "openai",
+        "validation_mode": "validator",
+        "sandbox_target": target_url,
+        "target_url": target_url,
+        "input_file": raw_file_path,
+        "output_file": normalized_file_path,
+        "created_by": "main.py",
+        "status": "created",
+        "stage": "init",
+    })
 
     logger.info("=" * 60)
     logger.info("Starting vulnerability orchestration")
     logger.info(f"Target URL: {target_url}")
-    logger.info(f"Input file: {input_file}")
+    logger.info(f"Raw input file: {raw_file_path}")
     logger.info("=" * 60)
 
-    # Step 1: Load normalized input
+    # Step 1: Parse raw input file and save normalized copy
     if job_id:
         update_scan_job(job_id, status="running", stage="ingest")
-        add_scan_event(job_id, "ingest", "info", f"Loading normalized input: {input_file}")
+        add_scan_event(job_id, "ingest", "info", f"Reading raw input: {raw_file_path}")
 
-    vuln_list = load_normalized_input(input_file)
+    try:
+        vuln_list = parse_raw_input(raw_file_path)
+    except Exception as e:
+        logger.error(f"Failed to parse raw input: {e}")
+        sys.exit(1)
+
     if not vuln_list:
         logger.error("No vulnerabilities loaded. Exiting.")
         sys.exit(1)
+
+    # Save normalized file to NORMALIZED_DIR with 'normalized_' prefix
+    os.makedirs(NORMALIZED_DIR, exist_ok=True)
+    write_normalized(vuln_list, normalized_file_path)
+    logger.info(f"Normalized file saved: {normalized_file_path}")
+
     if job_id:
         update_scan_job(job_id, stage="parse")
         add_scan_event(job_id, "parse", "info", f"Parsed {len(vuln_list)} vulnerabilities")
