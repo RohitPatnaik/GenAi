@@ -12,6 +12,25 @@ def get_vulnerability_by_cve(cve):
     conn.close()
     return row
 
+
+def get_vulnerabilities_by_cves(cves):
+    """Return vulnerability records keyed by CVE for the provided identifiers."""
+    normalized_cves = sorted({cve for cve in cves if cve})
+    if not normalized_cves:
+        return {}
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute(
+        "SELECT * FROM network_vulnerabilities WHERE cve = ANY(%s)",
+        (normalized_cves,),
+    )
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return {row["cve"]: row for row in rows}
+
+
 def get_all_vulnerabilities():
     """Return all vulnerability records as list of dicts."""
     conn = get_connection()
@@ -36,6 +55,44 @@ def insert_vulnerability(cve, cwe, title, description, cvss_score=None, severity
     cur.close()
     conn.close()
     return inserted_id
+
+
+def insert_vulnerabilities(vulnerabilities):
+    """Insert multiple vulnerability records, ignoring CVEs that already exist."""
+    rows = [
+        (
+            vuln.get("cve"),
+            vuln.get("cwe"),
+            vuln.get("title"),
+            vuln.get("description"),
+            vuln.get("cvss_score"),
+            vuln.get("severity"),
+            vuln.get("has_script", 0),
+            None,
+        )
+        for vuln in vulnerabilities
+        if vuln.get("cve")
+    ]
+    if not rows:
+        return 0
+
+    conn = get_connection()
+    cur = conn.cursor()
+    psycopg2.extras.execute_values(
+        cur,
+        """
+        INSERT INTO network_vulnerabilities
+        (cve, cwe, title, description, cvss_score, severity, has_script, script_path)
+        VALUES %s
+        ON CONFLICT (cve) DO NOTHING
+        """,
+        rows,
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
+    return len(rows)
+
 
 def update_has_script(cve, has_script):
     """Update has_script flag for a given CVE."""

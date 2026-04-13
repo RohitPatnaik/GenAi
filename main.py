@@ -32,7 +32,7 @@ from db.models import update_has_script
 from scanner_parser.parser import parse_raw_input, write_normalized
 from matcher.matcher import match_vulnerabilities
 from executor.runner import run_exploit, ensure_docker_running
-from db.models import create_scan_job, add_scan_report, get_scan_report, add_validator_result
+from db.models import create_scan_job, add_scan_report, add_validator_result, get_scan_report
 from db.connection import init_db, ensure_schema
 from sync_kb import sync_knowledgebase
 from validator.validator import validate_report
@@ -378,19 +378,15 @@ def main():
         except Exception:
             report_id = None
 
-    # Step 6: Validator stage (runs on report saved in DB)
+    # Step 6: Validator stage (runs on the report saved in DB)
     if job_id:
         _log_stage_update(logger, job_id, "validator")
         _log_scan_event(logger, "info", "Validator started", job_id=job_id, stage="validator")
         try:
-            report_json = None
-            if report_id:
-                report_row = get_scan_report(report_id)
-                if report_row:
-                    report_json = report_row.get("summary_json")
+            report_json = get_scan_report(report_id) if report_id else summary
 
-            # If summary report doesn't include vulnerabilities, try to parse a CVE report from stdout
-            if not report_json or not report_json.get("vulnerabilities"):
+            # If report doesn't include vulnerabilities, try to parse a CVE report from stdout
+            if not report_json.get("vulnerabilities"):
                 for r in results:
                     attempts = r.get("attempts") or []
                     last = attempts[-1] if attempts else {}
@@ -400,9 +396,6 @@ def main():
                     if parsed and parsed.get("vulnerabilities"):
                         report_json = parsed
                         break
-
-            if not report_json:
-                report_json = summary
 
             validation = validate_report(report_json)
             add_validator_result(job_id, report_id, validation)

@@ -1,43 +1,89 @@
+import threading
+
 import psycopg2
 from psycopg2 import sql
+from psycopg2.pool import SimpleConnectionPool
 from config import DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD, DB_CONNECT_TIMEOUT
+
+
+_db_initialized = False
+_db_initialized_lock = threading.Lock()
+_pool = None
+_pool_lock = threading.Lock()
+
+
+class _PooledConnection:
+    """Proxy connection that returns the underlying connection to the pool on close."""
+
+    def __init__(self, pool, connection):
+        self._pool = pool
+        self._connection = connection
+        self._returned = False
+
+    def close(self):
+        if not self._returned and self._connection is not None:
+            self._pool.putconn(self._connection)
+            self._returned = True
+
+    def __getattr__(self, name):
+        return getattr(self._connection, name)
+
+
+def _build_connection_kwargs(dbname: str) -> dict:
+    return {
+        "host": DB_HOST,
+        "port": DB_PORT,
+        "dbname": dbname,
+        "user": DB_USER,
+        "password": DB_PASSWORD,
+        "connect_timeout": DB_CONNECT_TIMEOUT,
+    }
 
 
 def ensure_database_exists():
     """Create the configured database if it does not already exist."""
-    conn = None
-    try:
-        conn = psycopg2.connect(
-            host=DB_HOST,
-            port=DB_PORT,
-            dbname="postgres",
-            user=DB_USER,
-            password=DB_PASSWORD,
-            connect_timeout=DB_CONNECT_TIMEOUT,
-        )
-        conn.autocommit = True
-        cur = conn.cursor()
-        cur.execute("SELECT 1 FROM pg_database WHERE datname = %s", (DB_NAME,))
-        exists = cur.fetchone() is not None
-        if not exists:
-            cur.execute(sql.SQL("CREATE DATABASE {}") .format(sql.Identifier(DB_NAME)))
-        cur.close()
-    finally:
-        if conn is not None:
-            conn.close()
+    global _db_initialized
+    if _db_initialized:
+        return
+
+    with _db_initialized_lock:
+        if _db_initialized:
+            return
+
+        conn = None
+        try:
+            conn = psycopg2.connect(**_build_connection_kwargs("postgres"))
+            conn.autocommit = True
+            cur = conn.cursor()
+            cur.execute("SELECT 1 FROM pg_database WHERE datname = %s", (DB_NAME,))
+            exists = cur.fetchone() is not None
+            if not exists:
+                cur.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(DB_NAME)))
+            cur.close()
+            _db_initialized = True
+        finally:
+            if conn is not None:
+                conn.close()
+
+
+def _get_pool():
+    global _pool
+    ensure_database_exists()
+    if _pool is not None:
+        return _pool
+
+    with _pool_lock:
+        if _pool is None:
+            _pool = SimpleConnectionPool(1, 10, **_build_connection_kwargs(DB_NAME))
+    return _pool
+
 
 def get_connection():
-    """Return a connection to the PostgreSQL database."""
-    ensure_database_exists()
-    conn = psycopg2.connect(
-        host=DB_HOST,
-        port=DB_PORT,
-        dbname=DB_NAME,
-        user=DB_USER,
-        password=DB_PASSWORD,
-        connect_timeout=DB_CONNECT_TIMEOUT
-    )
-    return conn
+    """Return a pooled connection to the PostgreSQL database."""
+    pool = _get_pool()
+    connection = pool.getconn()
+    connection.reset()
+    return _PooledConnection(pool, connection)
 
 def init_db():
     """Create the network_vulnerabilities table if it doesn't exist."""
