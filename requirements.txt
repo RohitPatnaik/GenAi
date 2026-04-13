@@ -1,6 +1,6 @@
 psycopg2-binary
 python-dotenv
-openai
+openai==0.28.1
 requests
 tqdm
 fastapi

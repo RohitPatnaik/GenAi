@@ -13,6 +13,10 @@ import logging
 from datetime import datetime
 from typing import List, Dict, Any
 
+# Ensure required directories exist before logger initialization
+os.makedirs('input', exist_ok=True)
+os.makedirs('logs', exist_ok=True)
+
 # Set up logging
 logging.basicConfig(
     level=logging.INFO,
@@ -23,10 +27,6 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
-
-# Ensure required directories exist
-os.makedirs('input', exist_ok=True)
-os.makedirs('logs', exist_ok=True)
 
 def parse_raw_input(raw_file_path: str) -> List[Dict[str, Any]]:
     """
